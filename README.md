@@ -40,3 +40,21 @@ date,user_id,employment_status,emotion_tag,song_name,distribution_type,song_expo
 - 「推广歌曲表现」增加音乐人字段。
 - 「音乐人转化表现」按音乐人聚合，不再只显示歌曲。
 - 音乐人核心指标：关联歌曲曝光UV、推广歌曲播放UV、关联歌曲收藏率、音乐人主页访问UV/率、新增关注UV、音乐人转粉率。
+
+
+## V6：Gemini LLM Agent
+本版本保留规则型 Agent，并新增：
+- 「生成 AI 深度诊断」
+- 「问问数据 Agent」开放式问答
+- LLM 只读取 Pandas 已计算好的汇总指标，不负责重新计算原始数值
+
+### Streamlit Secrets
+不要把 API Key 提交到 GitHub。
+
+在 Streamlit App 的 Settings / Secrets 中添加：
+
+```toml
+GEMINI_API_KEY="你的 Gemini API Key"
+```
+
+保存后应用会自动重启，并显示“Gemini 已连接”。

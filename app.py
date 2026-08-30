@@ -1,6 +1,7 @@
 
 import streamlit as st
 import pandas as pd
+import json
 from pathlib import Path
 
 st.set_page_config(
@@ -210,6 +211,101 @@ def diagnosis(m):
             )
     return "\n\n".join(lines)
 
+
+def has_gemini_key():
+    try:
+        return bool(st.secrets.get("GEMINI_API_KEY", ""))
+    except Exception:
+        return False
+
+def metrics_for_llm(m):
+    """只把已经由 Pandas 算好的汇总指标交给大模型，避免让模型自己算原始数据。"""
+    tag = m["tag_perf"].copy()
+    song = m["song_perf"].copy()
+    artist = m["artist_perf"].copy()
+
+    # 限制精度与数据量，降低 token 消耗
+    for frame in [tag, song, artist]:
+        for c in frame.columns:
+            if pd.api.types.is_numeric_dtype(frame[c]):
+                frame[c] = frame[c].round(4)
+
+    def clean_records(frame):
+        records = frame.to_dict(orient="records")
+        clean = []
+        for row in records:
+            out = {}
+            for k, v in row.items():
+                if pd.isna(v):
+                    out[k] = None
+                elif hasattr(v, "item"):
+                    out[k] = v.item()
+                else:
+                    out[k] = v
+            clean.append(out)
+        return clean
+
+    return {
+        "活动总览": {
+            "活动访问UV": int(m["activity_uv"]),
+            "症状标签选择UV": int(m["tag_uv"]),
+            "核心互动完成率": round(float(m["interaction_completion"]), 4),
+            "推广歌曲主动播放UV": int(m["active_play_uv"]),
+            "活动直接导流详情页UV": int(m["detail_uv"]),
+        },
+        "症状标签表现": clean_records(tag),
+        "推广歌曲表现": clean_records(song),
+        "音乐人转化表现": clean_records(artist),
+    }
+
+def ask_gemini(m, question):
+    from google import genai
+
+    api_key = st.secrets.get("GEMINI_API_KEY", "")
+    client = genai.Client(api_key=api_key)
+    metrics = metrics_for_llm(m)
+
+    system_context = """
+你是一个音乐内容运营数据分析 Agent，负责分析“牛马诊所限时义诊活动”。
+
+活动目标：
+通过“职场疼痛/情绪标签 → 对应小众歌曲”的场景化包装，降低用户试听门槛，为推广歌曲及音乐人带来曝光、主动播放和深层消费。
+
+必须遵守的数据口径：
+1. 所有数值均来自 Pandas 已计算好的结构化指标，你不要自行重新计算或虚构不存在的数据。
+2. 播放深度主看 UV；播放进度按歌曲总时长百分比计算，观察 10% / 50% / 80% / 100%（完播）节点。
+3. 互动推荐歌曲重点看：标签选择需求、歌曲卡 CTR、10%/50%/80%/完播率、收藏率。
+4. BGM 是自动播放，因此不能使用“活动内 BGM 播放深度”直接评价歌曲质量；重点看 BGM 曝光 → 单曲详情页主动访问，再观察详情页主动播放后的播放深度。
+5. CTR 高但 50% 到达率明显低，通常表示标签/包装吸引点击，但歌曲对用户情绪预期的承接偏弱。
+6. 标签选择 UV 高且 80% 到达率高，通常代表用户需求强且标签—歌曲匹配较好。
+7. 音乐人维度重点看：音乐人主页访问 UV/率、新增关注 UV、音乐人转粉率；同时参考关联推广歌曲的播放与收藏。
+8. 只能把能够追踪到的活动直接链路称为“活动直接导流”；不要把活动期间的所有全站增长都归因给活动。
+9. 回答要像内容运营分析，不要只复述数字。优先给“现象 → 判断 → 建议动作”。
+10. 如果数据不足以支持用户的问题，明确说“当前数据不足以判断”，并指出还需要什么字段。
+
+当前看板指标：
+""" + json.dumps(metrics, ensure_ascii=False)
+
+    prompt = system_context + "\n\n用户问题：" + question
+
+    response = client.models.generate_content(
+        model="gemini-3.7-flash",
+        contents=prompt,
+    )
+    return response.text
+
+def gemini_deep_diagnosis(m):
+    return ask_gemini(
+        m,
+        """请基于当前数据做一次深度运营诊断。输出四部分：
+1. 活动整体表现；
+2. 最值得继续加曝光的标签—歌曲组合，并说明依据；
+3. 最需要调整的标签—歌曲组合，并定位主要流失阶段；
+4. 音乐人转化中最值得关注的对象和下一步动作。
+尽量引用关键指标，但不要堆数字。"""
+    )
+
+
 st.title("💊 牛马诊所限时义诊活动｜数据分析 Agent")
 st.caption("专治：投简历疼、面试疼、上班疼、没人疼")
 
@@ -220,6 +316,7 @@ with st.sidebar:
     st.write("播放深度主看 UV；播放进度按歌曲时长百分比计算，统一观察 10% / 50% / 80% / 100% 四个节点。")
     st.write("BGM 为自动播放，因此不使用活动内 BGM 播放深度判断歌曲质量，而看 BGM 曝光 → 单曲详情页主动访问。")
     st.write("音乐人维度按 artist_name 聚合，重点观察主页访问 UV / 率、新增关注 UV 与转粉率。")
+    st.write("Gemini 接入后：Pandas 负责准确计算，LLM 只负责综合解释、诊断和自由问答。")
 
 st.markdown("### 开始体验")
 col_demo, col_upload = st.columns([1, 2])
@@ -312,8 +409,48 @@ st.dataframe(
 )
 
 st.subheader("🤖 Agent 运营诊断")
-st.caption("规则型数据分析 Agent：根据标签需求、点击、播放深度、收藏与音乐人转化自动定位问题")
+st.caption("规则层负责稳定定位问题；接入 Gemini 后，可进一步进行开放式分析与问答。")
 st.markdown(diagnosis(m))
+
+st.divider()
+st.subheader("✨ AI 深度分析 / 问问数据 Agent")
+
+if has_gemini_key():
+    st.success("Gemini 已连接")
+
+    if st.button("生成 AI 深度诊断", type="primary", use_container_width=True):
+        with st.spinner("Agent 正在综合标签、歌曲与音乐人指标..."):
+            try:
+                st.session_state["deep_ai_answer"] = gemini_deep_diagnosis(m)
+            except Exception as e:
+                st.error("AI 调用失败。请稍后重试，或检查 Gemini API Key / API 额度。")
+                st.caption(f"错误类型：{type(e).__name__}")
+
+    if st.session_state.get("deep_ai_answer"):
+        st.markdown(st.session_state["deep_ai_answer"])
+
+    st.markdown("**你也可以直接问当前数据：**")
+    question = st.text_input(
+        "例如：如果只能换掉两首互动歌曲，应该换哪两首？为什么？",
+        placeholder="输入你想问的数据问题"
+    )
+    if st.button("询问数据 Agent", use_container_width=True):
+        if not question.strip():
+            st.warning("请先输入问题。")
+        else:
+            with st.spinner("Agent 正在分析当前看板数据..."):
+                try:
+                    answer = ask_gemini(m, question.strip())
+                    st.session_state["qa_answer"] = answer
+                except Exception as e:
+                    st.error("AI 调用失败。请稍后重试，或检查 Gemini API Key / API 额度。")
+                    st.caption(f"错误类型：{type(e).__name__}")
+
+    if st.session_state.get("qa_answer"):
+        st.markdown(st.session_state["qa_answer"])
+else:
+    st.info("当前为规则型 Agent。配置 Gemini API Key 后，这里会自动解锁「AI 深度诊断」和自由问答。")
+    st.caption("API Key 只需配置在 Streamlit Secrets 中，不要写入 GitHub 代码或公开仓库。")
 
 with st.expander("查看原始数据"):
     st.dataframe(df,use_container_width=True,hide_index=True)
