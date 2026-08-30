@@ -9,6 +9,23 @@ st.set_page_config(
     layout="wide"
 )
 
+SONG_ARTIST_MAP = {
+    "你已经长大了，想去哪里都可以": "张三七_",
+    "快乐着疲惫": "DEN",
+    "恐高的长脖子小鹿": "就是哈比",
+    "走走走": "Matt吕彦良",
+    "垃圾飞行指南": "门门",
+    "食等睡等": "陈以诺Sarah",
+    "开心最重要": "才才",
+    "我想和你东游西晃": "动物园钉子户",
+    "mimimomo": "雷同二友",
+    "吗喽狂想曲": "玫瑰岛RoseIsland乐队",
+    "金都": "大都会乐团",
+    "植物人的闹钟": "失眠白貉",
+    "Sunday": "关浩德Walter",
+    "没有羊的牧羊人": "裘德",
+}
+
 REQUIRED = [
     "date","user_id","employment_status","emotion_tag","song_name",
     "distribution_type","song_exposed","song_clicked","detail_clicked",
@@ -27,6 +44,12 @@ def uv(df, condition):
 
 def analyse(df):
     df = df.copy()
+    if "artist_name" not in df.columns:
+        df["artist_name"] = df["song_name"].map(SONG_ARTIST_MAP).fillna("未知音乐人")
+    else:
+        df["artist_name"] = df["artist_name"].fillna("")
+        missing_artist = df["artist_name"].astype(str).str.strip() == ""
+        df.loc[missing_artist, "artist_name"] = df.loc[missing_artist, "song_name"].map(SONG_ARTIST_MAP).fillna("未知音乐人")
     df["play_progress"] = pd.to_numeric(df["play_progress"], errors="coerce").fillna(0).clip(0,1)
     binary_cols = ["song_exposed","song_clicked","detail_clicked","play_started","favorite","share","comment","artist_page_visit","follow_artist"]
     for c in binary_cols:
@@ -60,6 +83,7 @@ def analyse(df):
         tag_rows.append({
             "症状标签":tag,
             "对应歌曲":g["song_name"].mode().iloc[0],
+            "对应音乐人":g["artist_name"].mode().iloc[0],
             "选择UV":g["user_id"].nunique(),
             "歌曲卡CTR":safe_div(click_uv,exp_uv),
             "10%到达率":safe_div(p10,play_uv),
@@ -71,7 +95,7 @@ def analyse(df):
     tag_perf = pd.DataFrame(tag_rows)
 
     song_rows=[]
-    for (dist,song),g in df.groupby(["distribution_type","song_name"]):
+    for (dist,song,artist_name),g in df.groupby(["distribution_type","song_name","artist_name"]):
         exp_uv = uv(g, g["song_exposed"]==1)
         click_uv = uv(g, g["song_clicked"]==1)
         detail_song_uv = uv(g, g["detail_clicked"]==1)
@@ -86,6 +110,7 @@ def analyse(df):
         song_rows.append({
             "分发类型":dist,
             "歌曲":song,
+            "音乐人":artist_name,
             "曝光UV":exp_uv,
             "点击UV":click_uv,
             "详情页导流UV":detail_song_uv,
@@ -102,6 +127,27 @@ def analyse(df):
         })
     song_perf = pd.DataFrame(song_rows)
 
+    artist_rows=[]
+    for artist_name,g in df.groupby("artist_name"):
+        songs = " / ".join(sorted(g["song_name"].dropna().astype(str).unique()))
+        exp_uv = uv(g, g["song_exposed"]==1)
+        play_uv = uv(g, g["play_started"]==1)
+        fav_uv = uv(g, g["favorite"]==1)
+        artist_visit_uv = uv(g, g["artist_page_visit"]==1)
+        follow_uv = uv(g, g["follow_artist"]==1)
+        artist_rows.append({
+            "音乐人":artist_name,
+            "关联推广歌曲":songs,
+            "关联歌曲曝光UV":exp_uv,
+            "推广歌曲播放UV":play_uv,
+            "关联歌曲收藏率":safe_div(fav_uv,play_uv),
+            "音乐人主页访问UV":artist_visit_uv,
+            "音乐人主页访问率":safe_div(artist_visit_uv,play_uv),
+            "新增关注UV":follow_uv,
+            "音乐人转粉率":safe_div(follow_uv,artist_visit_uv)
+        })
+    artist_perf = pd.DataFrame(artist_rows)
+
     return {
         "activity_uv":activity_uv,
         "tag_uv":tag_uv,
@@ -110,7 +156,8 @@ def analyse(df):
         "interaction_completion":safe_div(tag_uv,activity_uv),
         "funnel":funnel,
         "tag_perf":tag_perf,
-        "song_perf":song_perf
+        "song_perf":song_perf,
+        "artist_perf":artist_perf
     }
 
 def diagnosis(m):
@@ -151,6 +198,16 @@ def diagnosis(m):
             )
         fav=song.sort_values("收藏率",ascending=False).iloc[0]
         lines.append(f"深层消费方面，「{fav['歌曲']}」收藏率最高（{pct(fav['收藏率'])}），可作为后续持续加曝光的候选。")
+
+    artist_perf=m["artist_perf"]
+    if not artist_perf.empty:
+        valid_artist=artist_perf[artist_perf["音乐人主页访问UV"]>0]
+        if not valid_artist.empty:
+            top_artist=valid_artist.sort_values(["音乐人主页访问率","音乐人转粉率"],ascending=False).iloc[0]
+            lines.append(
+                f"音乐人转化方面，「{top_artist['音乐人']}」的主页访问率为 {pct(top_artist['音乐人主页访问率'])}，"
+                f"转粉率为 {pct(top_artist['音乐人转粉率'])}，是当前从歌曲消费进一步转向音乐人关注表现较好的对象。"
+            )
     return "\n\n".join(lines)
 
 st.title("💊 牛马诊所限时义诊活动｜数据分析 Agent")
@@ -162,6 +219,7 @@ with st.sidebar:
     st.markdown("**核心口径**")
     st.write("播放深度主看 UV；播放进度按歌曲时长百分比计算，统一观察 10% / 50% / 80% / 100% 四个节点。")
     st.write("BGM 为自动播放，因此不使用活动内 BGM 播放深度判断歌曲质量，而看 BGM 曝光 → 单曲详情页主动访问。")
+    st.write("音乐人维度按 artist_name 聚合，重点观察主页访问 UV / 率、新增关注 UV 与转粉率。")
 
 st.markdown("### 开始体验")
 col_demo, col_upload = st.columns([1, 2])
@@ -221,7 +279,7 @@ with left:
     st.markdown("**互动页推荐歌曲**")
     inter=m["song_perf"][m["song_perf"]["分发类型"].astype(str).str.contains("互动",na=False)].copy()
     if not inter.empty:
-        cols=["歌曲","曝光UV","点击UV","播放UV","歌曲卡CTR","10%到达率","50%到达率","80%到达率","完播率","收藏率"]
+        cols=["歌曲","音乐人","曝光UV","点击UV","播放UV","歌曲卡CTR","10%到达率","50%到达率","80%到达率","完播率","收藏率"]
         x=inter[cols].copy()
         for c in ["歌曲卡CTR","10%到达率","50%到达率","80%到达率","完播率","收藏率"]:
             x[c]=x[c].map(pct)
@@ -231,17 +289,27 @@ with right:
     st.markdown("**BGM 歌曲**")
     bgm=m["song_perf"][m["song_perf"]["分发类型"].astype(str).str.contains("BGM",na=False)].copy()
     if not bgm.empty:
-        cols=["歌曲","曝光UV","详情页导流UV","播放UV","BGM→详情页转化率","10%到达率","50%到达率","80%到达率","完播率","收藏率"]
+        cols=["歌曲","音乐人","曝光UV","详情页导流UV","播放UV","BGM→详情页转化率","10%到达率","50%到达率","80%到达率","完播率","收藏率"]
         x=bgm[cols].copy()
         for c in ["BGM→详情页转化率","10%到达率","50%到达率","80%到达率","完播率","收藏率"]:
             x[c]=x[c].map(pct)
         st.dataframe(x,use_container_width=True,hide_index=True)
 
-st.subheader("04｜音乐人转化")
-artist=m["song_perf"][["歌曲","音乐人主页访问率","音乐人转粉率"]].copy()
+st.subheader("04｜音乐人转化表现")
+artist=m["artist_perf"].copy()
+artist["关联歌曲收藏率"]=artist["关联歌曲收藏率"].map(pct)
 artist["音乐人主页访问率"]=artist["音乐人主页访问率"].map(pct)
 artist["音乐人转粉率"]=artist["音乐人转粉率"].map(pct)
-st.dataframe(artist,use_container_width=True,hide_index=True)
+artist=artist.sort_values(["音乐人主页访问UV","新增关注UV"],ascending=False)
+st.dataframe(
+    artist[[
+        "音乐人","关联推广歌曲","关联歌曲曝光UV","推广歌曲播放UV",
+        "关联歌曲收藏率","音乐人主页访问UV","音乐人主页访问率",
+        "新增关注UV","音乐人转粉率"
+    ]],
+    use_container_width=True,
+    hide_index=True
+)
 
 st.subheader("🤖 Agent 运营诊断")
 st.caption("规则型数据分析 Agent：根据标签需求、点击、播放深度、收藏与音乐人转化自动定位问题")
