@@ -11,6 +11,8 @@ st.set_page_config(
     layout="wide"
 )
 
+ONLINE_DATA_URL = "https://raw.githubusercontent.com/tereeeeeesa0522-spec/niuma-clinic-data-agent/main/sample_data.csv"
+
 SONG_ARTIST_MAP = {
     "你已经长大了，想去哪里都可以": "张三七_",
     "快乐着疲惫": "DEN",
@@ -43,6 +45,14 @@ def pct(x):
 
 def uv(df, condition):
     return df.loc[condition, "user_id"].nunique()
+
+@st.cache_data(ttl=300)
+def load_online_data():
+    """
+    从公开在线数据源读取最新 Demo 数据。
+    真实业务落地时，这里可以替换为内部 API / SQL / 数仓查询。
+    """
+    return pd.read_csv(ONLINE_DATA_URL)
 
 def analyse(df):
     df = df.copy()
@@ -336,30 +346,74 @@ with st.sidebar:
     st.write("音乐人维度按 artist_name 聚合，重点观察主页访问 UV / 率、新增关注 UV 与转粉率。")
     st.write("Gemini 接入后：Pandas 负责准确计算，LLM 只负责综合解释、诊断和自由问答。")
     st.write("当前 LLM：Gemini 3.5 Flash；失败时自动切换 Flash-Lite。")
+    st.write("数据接入支持：在线同步 / 内置 Demo / CSV/XLSX 上传。在线同步用于模拟真实业务中的 API / SQL / 数仓自动取数。")
 
-st.markdown("### 开始体验")
-col_demo, col_upload = st.columns([1, 2])
+st.markdown("### 数据接入")
+col_sync, col_demo = st.columns(2)
+
+with col_sync:
+    sync_online = st.button("🔄 同步最新在线数据", type="primary", use_container_width=True)
+
 with col_demo:
-    use_demo = st.button("🚀 使用 Demo 示例数据", type="primary", use_container_width=True)
-with col_upload:
-    uploaded = st.file_uploader("或上传自己的活动数据", type=["csv","xlsx"], label_visibility="collapsed")
+    use_demo = st.button("🚀 使用 Demo 示例数据", use_container_width=True)
+
+uploaded = st.file_uploader("或上传自己的活动数据（CSV / XLSX）", type=["csv","xlsx"])
+
+if sync_online:
+    try:
+        with st.spinner("正在从在线数据源同步最新数据..."):
+            df = load_online_data()
+        st.session_state["data_mode"] = "online"
+        st.session_state["online_df"] = df
+        st.success("在线数据同步成功。看板已根据最新数据自动刷新。")
+    except Exception as e:
+        st.error("在线数据同步失败。你仍可使用 Demo 示例数据或手动上传文件。")
+        st.caption(f"错误类型：{type(e).__name__}")
+        st.session_state.pop("data_mode", None)
 
 if use_demo:
-    st.session_state["use_demo_data"] = True
+    st.session_state["data_mode"] = "demo"
 
 if uploaded is not None:
-    st.session_state["use_demo_data"] = False
+    st.session_state["data_mode"] = "upload"
     if uploaded.name.lower().endswith(".csv"):
         df = pd.read_csv(uploaded)
     else:
         df = pd.read_excel(uploaded)
+    st.session_state["uploaded_df"] = df
+    st.session_state["uploaded_name"] = uploaded.name
     st.success(f"已加载：{uploaded.name}")
-elif st.session_state.get("use_demo_data", False):
+
+mode = st.session_state.get("data_mode")
+
+if mode == "online":
+    if "online_df" in st.session_state:
+        df = st.session_state["online_df"]
+        st.caption("当前数据源：在线同步数据（GitHub Raw CSV）")
+    else:
+        try:
+            df = load_online_data()
+            st.session_state["online_df"] = df
+            st.caption("当前数据源：在线同步数据（GitHub Raw CSV）")
+        except Exception as e:
+            st.error("在线数据读取失败，请重新点击「同步最新在线数据」。")
+            st.stop()
+
+elif mode == "demo":
     demo_path = Path(__file__).with_name("sample_data.csv")
     df = pd.read_csv(demo_path)
     st.success("已加载内置 Demo 示例数据，可直接查看完整看板和 Agent 诊断。")
+    st.caption("当前数据源：仓库内置 Demo 数据")
+
+elif mode == "upload":
+    if "uploaded_df" not in st.session_state:
+        st.info("请重新上传 CSV / XLSX。")
+        st.stop()
+    df = st.session_state["uploaded_df"]
+    st.caption(f"当前数据源：手动上传 · {st.session_state.get('uploaded_name','文件')}")
+
 else:
-    st.info("首次体验建议直接点击「使用 Demo 示例数据」；也可以上传 CSV / XLSX。")
+    st.info("推荐直接点击「🔄 同步最新在线数据」体验自动数据接入；也可以使用 Demo 示例数据或上传 CSV / XLSX。")
     st.stop()
 
 missing=[c for c in REQUIRED if c not in df.columns]

@@ -68,3 +68,10 @@ GEMINI_API_KEY="你的 Gemini API Key"
 - 主模型切换为 `gemini-3.5-flash`（当前稳定 GA）。
 - 自动回退：`gemini-3.5-flash-lite` → `gemini-3.1-flash-lite`。
 - 若全部模型调用失败，页面会显示安全的具体错误信息，方便判断是 403 / 429 / 503 / 模型访问问题。
+
+## V9：自动数据接入
+- 新增「🔄 同步最新在线数据」。
+- 点击后，Streamlit 会直接从 GitHub Raw CSV 拉取最新 `sample_data.csv`，无需用户手动导出并上传表格。
+- 在线数据缓存 5 分钟；GitHub 中的 `sample_data.csv` 更新后，可再次同步。
+- 仍保留内置 Demo 数据和 CSV/XLSX 上传作为备用入口。
+- 当前在线 CSV 是 Demo 的“数据源适配层”；真实业务落地时，可把 `load_online_data()` 替换为内部 API、SQL 或数仓查询。
