@@ -52,6 +52,7 @@ def analyse(df):
         exp_uv = uv(g, g["song_exposed"]==1)
         click_uv = uv(g, g["song_clicked"]==1)
         play_uv = uv(g, g["play_started"]==1)
+        p10 = uv(g, (g["play_started"]==1)&(g["play_progress"]>=0.1))
         p50 = uv(g, (g["play_started"]==1)&(g["play_progress"]>=0.5))
         p80 = uv(g, (g["play_started"]==1)&(g["play_progress"]>=0.8))
         p100 = uv(g, (g["play_started"]==1)&(g["play_progress"]>=0.999))
@@ -61,6 +62,7 @@ def analyse(df):
             "对应歌曲":g["song_name"].mode().iloc[0],
             "选择UV":g["user_id"].nunique(),
             "歌曲卡CTR":safe_div(click_uv,exp_uv),
+            "10%到达率":safe_div(p10,play_uv),
             "50%到达率":safe_div(p50,play_uv),
             "80%到达率":safe_div(p80,play_uv),
             "完播率":safe_div(p100,play_uv),
