@@ -1,6 +1,7 @@
 
 import streamlit as st
 import pandas as pd
+from pathlib import Path
 
 st.set_page_config(
     page_title="牛马诊所限时义诊活动｜数据分析 Agent",
@@ -155,21 +156,35 @@ st.caption("专治：投简历疼、面试疼、上班疼、没人疼")
 
 with st.sidebar:
     st.header("使用说明")
-    st.write("上传活动 CSV / XLSX 数据，系统自动计算看板并输出运营诊断。")
+    st.write("点击 Demo 示例数据即可直接体验；也支持上传活动 CSV / XLSX，系统会自动计算看板并输出运营诊断。")
     st.markdown("**核心口径**")
-    st.write("播放深度主看 UV；播放进度按歌曲时长百分比计算。")
+    st.write("播放深度主看 UV；播放进度按歌曲时长百分比计算，统一观察 10% / 50% / 80% / 100% 四个节点。")
     st.write("BGM 为自动播放，因此不使用活动内 BGM 播放深度判断歌曲质量，而看 BGM 曝光 → 单曲详情页主动访问。")
 
-uploaded = st.file_uploader("上传活动数据", type=["csv","xlsx"])
+st.markdown("### 开始体验")
+col_demo, col_upload = st.columns([1, 2])
+with col_demo:
+    use_demo = st.button("🚀 使用 Demo 示例数据", type="primary", use_container_width=True)
+with col_upload:
+    uploaded = st.file_uploader("或上传自己的活动数据", type=["csv","xlsx"], label_visibility="collapsed")
 
-if uploaded is None:
-    st.info("请上传 CSV / XLSX。仓库里的 sample_data.csv 可以直接体验。")
-    st.stop()
+if use_demo:
+    st.session_state["use_demo_data"] = True
 
-if uploaded.name.lower().endswith(".csv"):
-    df=pd.read_csv(uploaded)
+if uploaded is not None:
+    st.session_state["use_demo_data"] = False
+    if uploaded.name.lower().endswith(".csv"):
+        df = pd.read_csv(uploaded)
+    else:
+        df = pd.read_excel(uploaded)
+    st.success(f"已加载：{uploaded.name}")
+elif st.session_state.get("use_demo_data", False):
+    demo_path = Path(__file__).with_name("sample_data.csv")
+    df = pd.read_csv(demo_path)
+    st.success("已加载内置 Demo 示例数据，可直接查看完整看板和 Agent 诊断。")
 else:
-    df=pd.read_excel(uploaded)
+    st.info("首次体验建议直接点击「使用 Demo 示例数据」；也可以上传 CSV / XLSX。")
+    st.stop()
 
 missing=[c for c in REQUIRED if c not in df.columns]
 if missing:
@@ -191,7 +206,7 @@ st.bar_chart(m["funnel"].set_index("阶段"))
 st.subheader("02｜就诊症状 / 标签表现")
 tag_show=m["tag_perf"].copy()
 if not tag_show.empty:
-    for c in ["歌曲卡CTR","50%到达率","80%到达率","完播率","收藏率"]:
+    for c in ["歌曲卡CTR","10%到达率","50%到达率","80%到达率","完播率","收藏率"]:
         tag_show[c]=tag_show[c].map(pct)
     st.dataframe(tag_show.sort_values("选择UV",ascending=False),use_container_width=True,hide_index=True)
 else:
@@ -204,9 +219,9 @@ with left:
     st.markdown("**互动页推荐歌曲**")
     inter=m["song_perf"][m["song_perf"]["分发类型"].astype(str).str.contains("互动",na=False)].copy()
     if not inter.empty:
-        cols=["歌曲","曝光UV","点击UV","播放UV","歌曲卡CTR","50%到达率","80%到达率","完播率","收藏率"]
+        cols=["歌曲","曝光UV","点击UV","播放UV","歌曲卡CTR","10%到达率","50%到达率","80%到达率","完播率","收藏率"]
         x=inter[cols].copy()
-        for c in ["歌曲卡CTR","50%到达率","80%到达率","完播率","收藏率"]:
+        for c in ["歌曲卡CTR","10%到达率","50%到达率","80%到达率","完播率","收藏率"]:
             x[c]=x[c].map(pct)
         st.dataframe(x,use_container_width=True,hide_index=True)
 
@@ -214,9 +229,9 @@ with right:
     st.markdown("**BGM 歌曲**")
     bgm=m["song_perf"][m["song_perf"]["分发类型"].astype(str).str.contains("BGM",na=False)].copy()
     if not bgm.empty:
-        cols=["歌曲","曝光UV","详情页导流UV","播放UV","BGM→详情页转化率","50%到达率","80%到达率","收藏率"]
+        cols=["歌曲","曝光UV","详情页导流UV","播放UV","BGM→详情页转化率","10%到达率","50%到达率","80%到达率","完播率","收藏率"]
         x=bgm[cols].copy()
-        for c in ["BGM→详情页转化率","50%到达率","80%到达率","收藏率"]:
+        for c in ["BGM→详情页转化率","10%到达率","50%到达率","80%到达率","完播率","收藏率"]:
             x[c]=x[c].map(pct)
         st.dataframe(x,use_container_width=True,hide_index=True)
 

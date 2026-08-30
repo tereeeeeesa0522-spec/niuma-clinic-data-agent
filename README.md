@@ -18,3 +18,13 @@
 date,user_id,employment_status,emotion_tag,song_name,distribution_type,song_exposed,song_clicked,detail_clicked,play_started,play_progress,favorite,share,comment,artist_page_visit,follow_artist
 
 `play_progress` 使用 0~1，例如 0.8 = 播放到 80%。
+
+
+## v2 优化
+- 新增「使用 Demo 示例数据」一键体验按钮
+- 调整模拟播放数据，使完播率落在更合理区间
+
+
+## V3 更新
+- 恢复完整播放进度口径：10% / 50% / 80% / 100%（完播率）
+- 症状标签表现、互动页歌曲表现、BGM 详情页主动播放表现统一展示上述节点
