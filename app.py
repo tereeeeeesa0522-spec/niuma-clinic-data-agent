@@ -2,6 +2,7 @@
 import streamlit as st
 import pandas as pd
 import json
+import time
 from pathlib import Path
 
 st.set_page_config(
@@ -288,11 +289,28 @@ def ask_gemini(m, question):
 
     prompt = system_context + "\n\n用户问题：" + question
 
-    response = client.models.generate_content(
-        model="gemini-3.7-flash",
-        contents=prompt,
-    )
-    return response.text
+    # 为了提高公开 Demo 的稳定性，优先使用与 generate_content 接口成熟兼容的
+    # Gemini 2.5 Flash；若遇到临时服务错误，再自动回退到 Flash-Lite。
+    model_candidates = ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
+    last_error = None
+
+    for model_name in model_candidates:
+        for attempt in range(2):
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                )
+                text = getattr(response, "text", None)
+                if text:
+                    return text
+                raise RuntimeError(f"{model_name} 未返回文本内容")
+            except Exception as e:
+                last_error = e
+                if attempt == 0:
+                    time.sleep(1.2)
+
+    raise RuntimeError(f"Gemini 调用连续失败：{type(last_error).__name__}: {last_error}")
 
 def gemini_deep_diagnosis(m):
     return ask_gemini(
@@ -416,14 +434,14 @@ st.divider()
 st.subheader("✨ AI 深度分析 / 问问数据 Agent")
 
 if has_gemini_key():
-    st.success("Gemini 已连接")
+    st.success("Gemini API Key 已配置")
 
     if st.button("生成 AI 深度诊断", type="primary", use_container_width=True):
         with st.spinner("Agent 正在综合标签、歌曲与音乐人指标..."):
             try:
                 st.session_state["deep_ai_answer"] = gemini_deep_diagnosis(m)
             except Exception as e:
-                st.error("AI 调用失败。请稍后重试，或检查 Gemini API Key / API 额度。")
+                st.error("AI 调用失败。系统已自动重试并切换备用模型；请稍后再试。")
                 st.caption(f"错误类型：{type(e).__name__}")
 
     if st.session_state.get("deep_ai_answer"):

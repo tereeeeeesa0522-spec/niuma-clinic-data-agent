@@ -58,3 +58,8 @@ GEMINI_API_KEY="你的 Gemini API Key"
 ```
 
 保存后应用会自动重启，并显示“Gemini 已连接”。
+
+## V7 稳定性修复
+- 将公开 Demo 的 LLM 调用切换为 `gemini-2.5-flash`。
+- 若首次请求失败，会自动重试；仍失败则回退到 `gemini-2.5-flash-lite`。
+- “Gemini 已连接”文案改为“Gemini API Key 已配置”，避免把“Key 存在”误认为“模型请求已成功”。
