@@ -291,7 +291,7 @@ def ask_gemini(m, question):
 
     # 为了提高公开 Demo 的稳定性，优先使用与 generate_content 接口成熟兼容的
     # Gemini 2.5 Flash；若遇到临时服务错误，再自动回退到 Flash-Lite。
-    model_candidates = ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
+    model_candidates = ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
     last_error = None
 
     for model_name in model_candidates:
@@ -308,7 +308,7 @@ def ask_gemini(m, question):
             except Exception as e:
                 last_error = e
                 if attempt == 0:
-                    time.sleep(1.2)
+                    time.sleep(2.0)
 
     raise RuntimeError(f"Gemini 调用连续失败：{type(last_error).__name__}: {last_error}")
 
@@ -335,6 +335,7 @@ with st.sidebar:
     st.write("BGM 为自动播放，因此不使用活动内 BGM 播放深度判断歌曲质量，而看 BGM 曝光 → 单曲详情页主动访问。")
     st.write("音乐人维度按 artist_name 聚合，重点观察主页访问 UV / 率、新增关注 UV 与转粉率。")
     st.write("Gemini 接入后：Pandas 负责准确计算，LLM 只负责综合解释、诊断和自由问答。")
+    st.write("当前 LLM：Gemini 3.5 Flash；失败时自动切换 Flash-Lite。")
 
 st.markdown("### 开始体验")
 col_demo, col_upload = st.columns([1, 2])
@@ -441,8 +442,9 @@ if has_gemini_key():
             try:
                 st.session_state["deep_ai_answer"] = gemini_deep_diagnosis(m)
             except Exception as e:
-                st.error("AI 调用失败。系统已自动重试并切换备用模型；请稍后再试。")
+                st.error("AI 调用失败。系统已自动重试并切换备用模型。")
                 st.caption(f"错误类型：{type(e).__name__}")
+                st.code(str(e)[:1200], language=None)
 
     if st.session_state.get("deep_ai_answer"):
         st.markdown(st.session_state["deep_ai_answer"])

@@ -63,3 +63,8 @@ GEMINI_API_KEY="你的 Gemini API Key"
 - 将公开 Demo 的 LLM 调用切换为 `gemini-2.5-flash`。
 - 若首次请求失败，会自动重试；仍失败则回退到 `gemini-2.5-flash-lite`。
 - “Gemini 已连接”文案改为“Gemini API Key 已配置”，避免把“Key 存在”误认为“模型请求已成功”。
+
+## V8 Gemini 3.5 稳定版
+- 主模型切换为 `gemini-3.5-flash`（当前稳定 GA）。
+- 自动回退：`gemini-3.5-flash-lite` → `gemini-3.1-flash-lite`。
+- 若全部模型调用失败，页面会显示安全的具体错误信息，方便判断是 403 / 429 / 503 / 模型访问问题。
